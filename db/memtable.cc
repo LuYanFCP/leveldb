@@ -99,9 +99,9 @@ void MemTable::Add(SequenceNumber s, ValueType type, const Slice& key,
 }
 
 bool MemTable::Get(const LookupKey& key, std::string* value, Status* s) {
-  Slice memkey = key.memtable_key();
+  Slice memkey = key.memtable_key();  // 整体 Varint32(len) + data + (type+sequence)
   Table::Iterator iter(&table_);
-  iter.Seek(memkey.data());
+  iter.Seek(memkey.data());  // find
   if (iter.Valid()) {
     // entry format is:
     //    klength  varint32
@@ -114,7 +114,7 @@ bool MemTable::Get(const LookupKey& key, std::string* value, Status* s) {
     // all entries with overly large sequence numbers.
     const char* entry = iter.key();
     uint32_t key_length;
-    const char* key_ptr = GetVarint32Ptr(entry, entry + 5, &key_length);
+    const char* key_ptr = GetVarint32Ptr(entry, entry + 5, &key_length);  // Varint32最大是32
     if (comparator_.comparator.user_comparator()->Compare(
             Slice(key_ptr, key_length - 8), key.user_key()) == 0) {
       // Correct user key
@@ -122,7 +122,7 @@ bool MemTable::Get(const LookupKey& key, std::string* value, Status* s) {
       switch (static_cast<ValueType>(tag & 0xff)) {
         case kTypeValue: {
           Slice v = GetLengthPrefixedSlice(key_ptr + key_length);
-          value->assign(v.data(), v.size());
+          value->assign(v.data(), v.size());  // 解析value
           return true;
         }
         case kTypeDeletion:

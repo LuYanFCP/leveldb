@@ -104,7 +104,7 @@ const char* GetVarint32PtrFallback(const char* p, const char* limit,
 bool GetVarint32(Slice* input, uint32_t* value) {
   const char* p = input->data();
   const char* limit = p + input->size();
-  const char* q = GetVarint32Ptr(p, limit, value);
+  const char* q = GetVarint32Ptr(p, limit, value);  // 获得数据指针
   if (q == nullptr) {
     return false;
   } else {

@@ -33,6 +33,7 @@ endif (WIN32)
 option(LEVELDB_BUILD_TESTS "Build LevelDB's unit tests" ON)
 option(LEVELDB_BUILD_BENCHMARKS "Build LevelDB's benchmarks" ON)
 option(LEVELDB_INSTALL "Install LevelDB's header and library" ON)
+option(LEVELDB_DEBUG, "Learning Debug" ON)
 
 include(CheckIncludeFile)
 check_include_file("unistd.h" HAVE_UNISTD_H)
@@ -493,3 +494,31 @@ if(LEVELDB_INSTALL)
     DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}"
   )
 endif(LEVELDB_INSTALL)
+
+# if(LEVELDB_DEBUG)
+function(leveldb_debug debug_file)
+  get_filename_component(target_name "${debug_file}" NAME_WE)
+  MESSAGE(STATUS "${target_name}, ${debug_file}")
+  add_executable("${target_name}" "")
+  target_sources("${target_name}"
+        PRIVATE
+          "${PROJECT_BINARY_DIR}/include"
+        PUBLIC
+          "${debug_file}"
+  )
+  target_link_libraries("${target_name}" leveldb)
+  target_compile_definitions("${target_name}"
+      PRIVATE
+        ${LEVELDB_PLATFORM_NAME}=1
+  )
+  if (NOT HAVE_CXX17_HAS_INCLUDE)
+      target_compile_definitions("${targe_tname}"
+        PRIVATE
+          LEVELDB_HAS_PORT_CONFIG_H=1
+      )
+  endif(NOT HAVE_CXX17_HAS_INCLUDE)
+
+endfunction(leveldb_debug debug_file)
+leveldb_debug("my_test/demo1.cc")
+leveldb_debug("my_test/demo_coding.cc") 
+# endif(LEVELDB_DEBUG)

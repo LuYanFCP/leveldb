@@ -102,18 +102,18 @@ Options SanitizeOptions(const std::string& dbname,
   ClipToRange(&result.write_buffer_size, 64 << 10, 1 << 30);
   ClipToRange(&result.max_file_size, 1 << 20, 1 << 30);
   ClipToRange(&result.block_size, 1 << 10, 4 << 20);
-  if (result.info_log == nullptr) {
+  if (result.info_log == nullptr) { // 如果没有info_log
     // Open a log file in the same directory as the db
     src.env->CreateDir(dbname);  // In case it does not exist
-    src.env->RenameFile(InfoLogFileName(dbname), OldInfoLogFileName(dbname));
-    Status s = src.env->NewLogger(InfoLogFileName(dbname), &result.info_log);
+    src.env->RenameFile(InfoLogFileName(dbname), (dbname));  // 修改文件名称
+    Status s = src.env->NewLogger(InfoLogFileName(dbname), &result.info_log);  // 创建LOG
     if (!s.ok()) {
       // No place suitable for logging
       result.info_log = nullptr;
     }
   }
   if (result.block_cache == nullptr) {
-    result.block_cache = NewLRUCache(8 << 20);
+    result.block_cache = NewLRUCache(8 << 20);  // 默认cache 使用LRUCache
   }
   return result;
 }
@@ -124,21 +124,21 @@ static int TableCacheSize(const Options& sanitized_options) {
 }
 
 DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
-    : env_(raw_options.env),
-      internal_comparator_(raw_options.comparator),
-      internal_filter_policy_(raw_options.filter_policy),
+    : env_(raw_options.env),  // 初始化env
+      internal_comparator_(raw_options.comparator),  // 初始化compare函数
+      internal_filter_policy_(raw_options.filter_policy),  // 初始化 filter策略
       options_(SanitizeOptions(dbname, &internal_comparator_,
-                               &internal_filter_policy_, raw_options)),
-      owns_info_log_(options_.info_log != raw_options.info_log),
-      owns_cache_(options_.block_cache != raw_options.block_cache),
-      dbname_(dbname),
-      table_cache_(new TableCache(dbname_, options_, TableCacheSize(options_))),
-      db_lock_(nullptr),
+                               &internal_filter_policy_, raw_options)),    // 整理配置， 包含初始化部分的目录
+      owns_info_log_(options_.info_log != raw_options.info_log),          // 是否新建了
+      owns_cache_(options_.block_cache != raw_options.block_cache),       // 策略  
+      dbname_(dbname),   // 初始化名称
+      table_cache_(new TableCache(dbname_, options_, TableCacheSize(options_))),  // 初始化TableCache
+      db_lock_(nullptr),  // FileLock
       shutting_down_(false),
       background_work_finished_signal_(&mutex_),
-      mem_(nullptr),
-      imm_(nullptr),
-      has_imm_(false),
+      mem_(nullptr),   // memoryTable 置空
+      imm_(nullptr),   // 以及灰掉的memoryTable
+      has_imm_(false),  // automic<bool> 是否存在imm
       logfile_(nullptr),
       logfile_number_(0),
       log_(nullptr),
@@ -1121,15 +1121,15 @@ Status DBImpl::Get(const ReadOptions& options, const Slice& key,
     snapshot =
         static_cast<const SnapshotImpl*>(options.snapshot)->sequence_number();
   } else {
-    snapshot = versions_->LastSequence();
+    snapshot = versions_->LastSequence();  // 找到Last Sequence
   }
 
   MemTable* mem = mem_;
   MemTable* imm = imm_;
-  Version* current = versions_->current();
-  mem->Ref();
+  Version* current = versions_->current();  // 当前version的指针
+  mem->Ref();  // 增加Ref count
   if (imm != nullptr) imm->Ref();
-  current->Ref();
+  current->Ref();  // 增加Ref
 
   bool have_stat_update = false;
   Version::GetStats stats;
@@ -1150,6 +1150,8 @@ Status DBImpl::Get(const ReadOptions& options, const Slice& key,
     mutex_.Lock();
   }
 
+  // 直接去硬盘里面拿的时候会携带统计信息，
+  // 如果 硬盘拿 + 统计ok则调度
   if (have_stat_update && current->UpdateStats(stats)) {
     MaybeScheduleCompaction();
   }
@@ -1203,23 +1205,24 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* updates) {
   w.sync = options.sync;
   w.done = false;
 
-  MutexLock l(&mutex_);
-  writers_.push_back(&w);
+  MutexLock l(&mutex_);  // 加锁
+  writers_.push_back(&w);  // 进入写入队列
   while (!w.done && &w != writers_.front()) {
-    w.cv.Wait();
+    w.cv.Wait();   // 调用port的Condvar，调用wait挂起现场，知道被notify 之后接着往下走，同时放锁
   }
   if (w.done) {
     return w.status;
   }
 
+  // 写操作的具体
   // May temporarily unlock and wait.
   Status status = MakeRoomForWrite(updates == nullptr);
   uint64_t last_sequence = versions_->LastSequence();
   Writer* last_writer = &w;
   if (status.ok() && updates != nullptr) {  // nullptr batch is for compactions
-    WriteBatch* write_batch = BuildBatchGroup(&last_writer);
-    WriteBatchInternal::SetSequence(write_batch, last_sequence + 1);
-    last_sequence += WriteBatchInternal::Count(write_batch);
+    WriteBatch* write_batch = BuildBatchGroup(&last_writer);  // 创建写入组
+    WriteBatchInternal::SetSequence(write_batch, last_sequence + 1);  // 写入序号
+    last_sequence += WriteBatchInternal::Count(write_batch); // 加上操作的个数
 
     // Add to log and apply to memtable.  We can release the lock
     // during this phase since &w is currently responsible for logging
@@ -1227,7 +1230,8 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* updates) {
     // into mem_.
     {
       mutex_.Unlock();
-      status = log_->AddRecord(WriteBatchInternal::Contents(write_batch));
+      // 写日志如果需要直接刷到硬盘，这部分是redo log
+      status = log_->AddRecord(WriteBatchInternal::Contents(write_batch));   // Slice(batch->rep_);
       bool sync_error = false;
       if (status.ok() && options.sync) {
         status = logfile_->Sync();
@@ -1235,6 +1239,7 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* updates) {
           sync_error = true;
         }
       }
+      // 写入MemoryTable中
       if (status.ok()) {
         status = WriteBatchInternal::InsertInto(write_batch, mem_);
       }
@@ -1246,11 +1251,13 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* updates) {
         RecordBackgroundError(status);
       }
     }
+    // 请了 tmp_batch
     if (write_batch == tmp_batch_) tmp_batch_->Clear();
-
+    //写入成功更新lastSeq
     versions_->SetLastSequence(last_sequence);
   }
-
+  // 写入成功
+  // 如果一个老的写入任务写入成功，那么之前的所有的都可以唤醒写，也应该写完了
   while (true) {
     Writer* ready = writers_.front();
     writers_.pop_front();
@@ -1262,6 +1269,7 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* updates) {
     if (ready == last_writer) break;
   }
 
+  // 唤醒下一个人物
   // Notify new head of write queue
   if (!writers_.empty()) {
     writers_.front()->cv.Signal();
@@ -1323,17 +1331,17 @@ WriteBatch* DBImpl::BuildBatchGroup(Writer** last_writer) {
 // REQUIRES: mutex_ is held
 // REQUIRES: this thread is currently at the front of the writer queue
 Status DBImpl::MakeRoomForWrite(bool force) {
-  mutex_.AssertHeld();
+  mutex_.AssertHeld();   // 判断是否持有锁
   assert(!writers_.empty());
-  bool allow_delay = !force;
+  bool allow_delay = !force;  
   Status s;
   while (true) {
-    if (!bg_error_.ok()) {
+    if (!bg_error_.ok()) {  // 守护线程有问题直接退出
       // Yield previous error
       s = bg_error_;
       break;
     } else if (allow_delay && versions_->NumLevelFiles(0) >=
-                                  config::kL0_SlowdownWritesTrigger) {
+                                  config::kL0_SlowdownWritesTrigger) {  // 判断写延迟，也就是L0层数，大于阈值无法写入的时候
       // We are getting close to hitting a hard limit on the number of
       // L0 files.  Rather than delaying a single write by several
       // seconds when we hit the hard limit, start delaying each
@@ -1341,20 +1349,22 @@ Status DBImpl::MakeRoomForWrite(bool force) {
       // this delay hands over some CPU to the compaction thread in
       // case it is sharing the same core as the writer.
       mutex_.Unlock();
-      env_->SleepForMicroseconds(1000);
+      // 写延迟最多1s
+      env_->SleepForMicroseconds(1000);   // 我们即将达到 L0 文件数量的硬性限制。 当我们达到硬限制时，不要将单个写入延迟几秒钟，而是开始将每个单独的写入延迟 1 毫秒以减少延迟差异。 此外，这种延迟将一些 CPU 移交给压缩线程，以防它与编写器共享相同的内核。
       allow_delay = false;  // Do not delay a single write more than once
       mutex_.Lock();
     } else if (!force &&
                (mem_->ApproximateMemoryUsage() <= options_.write_buffer_size)) {
       // There is room in current memtable
+      // writer_buffer_size 大于 mem_stable的大小，需要rotate MemoryTable
       break;
-    } else if (imm_ != nullptr) {
+    } else if (imm_ != nullptr) {  // imm 被compact的MemoryTable，开始压缩
       // We have filled up the current memtable, but the previous
       // one is still being compacted, so we wait.
       Log(options_.info_log, "Current memtable full; waiting...\n");
       background_work_finished_signal_.Wait();
     } else if (versions_->NumLevelFiles(0) >= config::kL0_StopWritesTrigger) {
-      // There are too many level-0 files.
+      // There are too many level-0 files.  // 需要往下层压缩
       Log(options_.info_log, "Too many L0 files; waiting...\n");
       background_work_finished_signal_.Wait();
     } else {
@@ -1362,7 +1372,7 @@ Status DBImpl::MakeRoomForWrite(bool force) {
       assert(versions_->PrevLogNumber() == 0);
       uint64_t new_log_number = versions_->NewFileNumber();
       WritableFile* lfile = nullptr;
-      s = env_->NewWritableFile(LogFileName(dbname_, new_log_number), &lfile);
+      s = env_->NewWritableFile(LogFileName(dbname_, new_log_number), &lfile);  
       if (!s.ok()) {
         // Avoid chewing through file number space in a tight loop.
         versions_->ReuseFileNumber(new_log_number);
@@ -1374,11 +1384,11 @@ Status DBImpl::MakeRoomForWrite(bool force) {
       logfile_number_ = new_log_number;
       log_ = new log::Writer(lfile);
       imm_ = mem_;
-      has_imm_.store(true, std::memory_order_release);
-      mem_ = new MemTable(internal_comparator_);
-      mem_->Ref();
+      has_imm_.store(true, std::memory_order_release);  // 标黑
+      mem_ = new MemTable(internal_comparator_);  // 新建一个MemTable
+      mem_->Ref();  // 增加引用
       force = false;  // Do not force another compaction if have room
-      MaybeScheduleCompaction();
+      MaybeScheduleCompaction();   // 判断是否压缩
     }
   }
   return s;

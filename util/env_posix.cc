@@ -81,7 +81,7 @@ class Limiter {
   // Else return false.
   bool Acquire() {
     int old_acquires_allowed =
-        acquires_allowed_.fetch_sub(1, std::memory_order_relaxed);
+        acquires_allowed_.fetch_sub(1, std::memory_order_relaxed);  // std::memory_order_relaxed 保证load和store是原子的，但是不保证是否不乱序
 
     if (old_acquires_allowed > 0) return true;
 
@@ -114,7 +114,7 @@ class PosixSequentialFile final : public SequentialFile {
   Status Read(size_t n, Slice* result, char* scratch) override {
     Status status;
     while (true) {
-      ::ssize_t read_size = ::read(fd_, scratch, n);
+      ::ssize_t read_size = ::read(fd_, scratch, n);  // 只不过，在 fd文件描述符没有O_APPEND属性的情况下，write函数会修改文件偏移指针，下次不seek写入位置直接调用write函数时，write函数会接着上次的位置继续写入（offset+len）。而pwrite函数则不会改变文件偏移指针。
       if (read_size < 0) {  // Read error.
         if (errno == EINTR) {
           continue;  // Retry
@@ -181,7 +181,7 @@ class PosixRandomAccessFile final : public RandomAccessFile {
     assert(fd != -1);
 
     Status status;
-    ssize_t read_size = ::pread(fd, scratch, n, static_cast<off_t>(offset));
+    ssize_t read_size = ::pread(fd, scratch, n, static_cast<off_t>(offset));  // 适合多线程读写，pread=read+lseek 并且是一个整体的原子操作
     *result = Slice(scratch, (read_size < 0) ? 0 : read_size);
     if (read_size < 0) {
       // An error: return a non-ok status.
@@ -251,8 +251,8 @@ class PosixWritableFile final : public WritableFile {
   PosixWritableFile(std::string filename, int fd)
       : pos_(0),
         fd_(fd),
-        is_manifest_(IsManifest(filename)),
-        filename_(std::move(filename)),
+        is_manifest_(IsManifest(filename)),  // 判断是否是manifest文件
+        filename_(std::move(filename)),  //
         dirname_(Dirname(filename_)) {}
 
   ~PosixWritableFile() override {
@@ -267,7 +267,7 @@ class PosixWritableFile final : public WritableFile {
     const char* write_data = data.data();
 
     // Fit as much as possible into buffer.
-    size_t copy_size = std::min(write_size, kWritableFileBufferSize - pos_);
+    size_t copy_size = std::min(write_size, kWritableFileBufferSize - pos_);  // 先写到buffer中
     std::memcpy(buf_ + pos_, write_data, copy_size);
     write_data += copy_size;
     write_size -= copy_size;
@@ -275,19 +275,21 @@ class PosixWritableFile final : public WritableFile {
     if (write_size == 0) {
       return Status::OK();
     }
-
+    // 如果buffer满了，就刷
     // Can't fit in buffer, so need to do at least one write.
     Status status = FlushBuffer();
     if (!status.ok()) {
       return status;
     }
 
+    // 如果还在范围内
     // Small writes go to buffer, large writes are written directly.
     if (write_size < kWritableFileBufferSize) {
       std::memcpy(buf_, write_data, write_size);
       pos_ = write_size;
       return Status::OK();
     }
+    // 循环写
     return WriteUnbuffered(write_data, write_size);
   }
 
@@ -440,11 +442,11 @@ int LockOrUnlock(int fd, bool lock) {
   errno = 0;
   struct ::flock file_lock_info;
   std::memset(&file_lock_info, 0, sizeof(file_lock_info));
-  file_lock_info.l_type = (lock ? F_WRLCK : F_UNLCK);
+  file_lock_info.l_type = (lock ? F_WRLCK : F_UNLCK);  // 加锁和放锁
   file_lock_info.l_whence = SEEK_SET;
   file_lock_info.l_start = 0;
   file_lock_info.l_len = 0;  // Lock/unlock entire file.
-  return ::fcntl(fd, F_SETLK, &file_lock_info);
+  return ::fcntl(fd, F_SETLK, &file_lock_info);  // 加锁
 }
 
 // Instances are thread-safe because they are immutable.
@@ -468,8 +470,13 @@ class PosixFileLock : public FileLock {
 // same process.
 //
 // Instances are thread-safe because all member data is guarded by a mutex.
+
+// LOCKS_EXCLUDED 等是clang 用于声明线程安全的一个宏， 用户声明其中有lock使用并保证线程安全
 class PosixLockTable {
  public:
+  /*
+    EXCLUDES是函数或方法的属性，该属性声明调用方不拥有给定的功能。该注释用于防止死锁。许多互斥量实现都不是可重入的，因此，如果函数第二次获取互斥量，则可能发生死锁。
+   */
   bool Insert(const std::string& fname) LOCKS_EXCLUDED(mu_) {
     mu_.Lock();
     bool succeeded = locked_files_.insert(fname).second;
@@ -484,7 +491,10 @@ class PosixLockTable {
 
  private:
   port::Mutex mu_;
-  std::set<std::string> locked_files_ GUARDED_BY(mu_);
+  // GUARDED_BY是数据成员的属性，
+  // 该属性声明数据成员受给定功能保护。对数据的读操作需要共享访问，而写操作则需要互斥访问。
+  // 该 GUARDED_BY属性声明线程必须先锁定listener_list_mutex才能对其进行读写listener_list，从而确保增量和减量操作是原子的
+  std::set<std::string> locked_files_ GUARDED_BY(mu_);   
 };
 
 class PosixEnv : public Env {
@@ -738,7 +748,7 @@ class PosixEnv : public Env {
   };
 
   port::Mutex background_work_mutex_;
-  port::CondVar background_work_cv_ GUARDED_BY(background_work_mutex_);
+  port::CondVar background_work_cv_ GUARDED_BY(background_work_mutex_); // GUARDED_BY 声明变量收到锁的保护
   bool started_background_thread_ GUARDED_BY(background_work_mutex_);
 
   std::queue<BackgroundWorkItem> background_work_queue_

@@ -24,7 +24,7 @@
 namespace leveldb {
 
 // WriteBatch header has an 8-byte sequence number followed by a 4-byte count.
-static const size_t kHeader = 12;
+static const size_t kHeader = 12;  // 默认的
 
 WriteBatch::WriteBatch() { Clear(); }
 
@@ -45,8 +45,8 @@ Status WriteBatch::Iterate(Handler* handler) const {
     return Status::Corruption("malformed WriteBatch (too small)");
   }
 
-  input.remove_prefix(kHeader);
-  Slice key, value;
+  input.remove_prefix(kHeader);  // 删除sequence 和 count的头
+  Slice key, value;  //  kv变量
   int found = 0;
   while (!input.empty()) {
     found++;
@@ -80,7 +80,7 @@ Status WriteBatch::Iterate(Handler* handler) const {
 }
 
 int WriteBatchInternal::Count(const WriteBatch* b) {
-  return DecodeFixed32(b->rep_.data() + 8);
+  return DecodeFixed32(b->rep_.data() + 8);  // const char *
 }
 
 void WriteBatchInternal::SetCount(WriteBatch* b, int n) {

@@ -6,7 +6,7 @@
 
 namespace leveldb {
 
-static const int kBlockSize = 4096;
+static const int kBlockSize = 4096;  // 4k
 
 Arena::Arena()
     : alloc_ptr_(nullptr), alloc_bytes_remaining_(0), memory_usage_(0) {}
@@ -18,7 +18,7 @@ Arena::~Arena() {
 }
 
 char* Arena::AllocateFallback(size_t bytes) {
-  if (bytes > kBlockSize / 4) {
+  if (bytes > kBlockSize / 4) { // 如果其大于1k则直接申请
     // Object is more than a quarter of our block size.  Allocate it separately
     // to avoid wasting too much space in leftover bytes.
     char* result = AllocateNewBlock(bytes);
@@ -59,7 +59,7 @@ char* Arena::AllocateNewBlock(size_t block_bytes) {
   char* result = new char[block_bytes];
   blocks_.push_back(result);
   memory_usage_.fetch_add(block_bytes + sizeof(char*),
-                          std::memory_order_relaxed);
+                          std::memory_order_relaxed);  // 个人觉的它估计的不准确，因为vector其实会提前分配，还有一些乱七八糟的变量内存
   return result;
 }
 
