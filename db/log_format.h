@@ -24,10 +24,10 @@ enum RecordType {
 };
 static const int kMaxRecordType = kLastType;
 
-static const int kBlockSize = 32768;
+static const int kBlockSize = 32768;  // 32K
 
 // Header is checksum (4 bytes), length (2 bytes), type (1 byte).
-static const int kHeaderSize = 4 + 2 + 1;
+static const int kHeaderSize = 4 + 2 + 1;  // 保存的头，
 
 }  // namespace log
 }  // namespace leveldb

@@ -84,6 +84,8 @@ Version::~Version() {
   }
 }
 
+// 二分查找从files中找第一个 largest_key >= key 的文件信息编号
+// 主要目标是发现重复范围的文件
 int FindFile(const InternalKeyComparator& icmp,
              const std::vector<FileMetaData*>& files, const Slice& key) {
   uint32_t left = 0;
@@ -124,13 +126,13 @@ bool SomeFileOverlapsRange(const InternalKeyComparator& icmp,
                            const Slice* smallest_user_key,
                            const Slice* largest_user_key) {
   const Comparator* ucmp = icmp.user_comparator();
-  if (!disjoint_sorted_files) {
+  if (!disjoint_sorted_files) { // 不返回join返回
     // Need to check against all files
     for (size_t i = 0; i < files.size(); i++) {
       const FileMetaData* f = files[i];
       if (AfterFile(ucmp, smallest_user_key, f) ||
           BeforeFile(ucmp, largest_user_key, f)) {
-        // No overlap
+        // No overlap  没交集
       } else {
         return true;  // Overlap
       }
@@ -138,6 +140,7 @@ bool SomeFileOverlapsRange(const InternalKeyComparator& icmp,
     return false;
   }
 
+  // 返回join 范围
   // Binary search over file list
   uint32_t index = 0;
   if (smallest_user_key != nullptr) {
@@ -461,6 +464,7 @@ void Version::Unref() {
   }
 }
 
+// 计算方位是否有交叉， level > 0 的时候 返回是否，level > 0 时候返回范围
 bool Version::OverlapInLevel(int level, const Slice* smallest_user_key,
                              const Slice* largest_user_key) {
   return SomeFileOverlapsRange(vset_->icmp_, (level > 0), files_[level],
@@ -470,7 +474,7 @@ bool Version::OverlapInLevel(int level, const Slice* smallest_user_key,
 int Version::PickLevelForMemTableOutput(const Slice& smallest_user_key,
                                         const Slice& largest_user_key) {
   int level = 0;
-  if (!OverlapInLevel(0, &smallest_user_key, &largest_user_key)) {
+  if (!OverlapInLevel(0, &smallest_user_key, &largest_user_key)) {  // 0 层无交叉，那么就不用压缩
     // Push to next level if there is no overlap in next level,
     // and the #bytes overlapping in the level after that are limited.
     InternalKey start(smallest_user_key, kMaxSequenceNumber, kValueTypeForSeek);

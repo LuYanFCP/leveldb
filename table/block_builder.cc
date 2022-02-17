@@ -77,31 +77,32 @@ void BlockBuilder::Add(const Slice& key, const Slice& value) {
   size_t shared = 0;
   if (counter_ < options_->block_restart_interval) {
     // See how much sharing to do with previous string
+    // 寻找共同的地方
     const size_t min_length = std::min(last_key_piece.size(), key.size());
     while ((shared < min_length) && (last_key_piece[shared] == key[shared])) {
       shared++;
     }
   } else {
     // Restart compression
-    restarts_.push_back(buffer_.size());
+    restarts_.push_back(buffer_.size());  // restart pointer 存储完整的key
     counter_ = 0;
   }
   const size_t non_shared = key.size() - shared;
 
   // Add "<shared><non_shared><value_size>" to buffer_
-  PutVarint32(&buffer_, shared);
-  PutVarint32(&buffer_, non_shared);
-  PutVarint32(&buffer_, value.size());
+  PutVarint32(&buffer_, shared);  // 共同的大小
+  PutVarint32(&buffer_, non_shared);  // 不同的大小
+  PutVarint32(&buffer_, value.size());  // value 大小
 
   // Add string delta to buffer_ followed by value
-  buffer_.append(key.data() + shared, non_shared);
+  buffer_.append(key.data() + shared, non_shared);  // 存储不同的大小
   buffer_.append(value.data(), value.size());
 
   // Update state
   last_key_.resize(shared);
-  last_key_.append(key.data() + shared, non_shared);
+  last_key_.append(key.data() + shared, non_shared); // 更新last_key
   assert(Slice(last_key_) == key);
-  counter_++;
+  counter_++;  // 记录KV个数
 }
 
 }  // namespace leveldb

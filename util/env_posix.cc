@@ -740,7 +740,7 @@ class PosixEnv : public Env {
   //
   // This structure is thread-safe beacuse it is immutable.
   struct BackgroundWorkItem {
-    explicit BackgroundWorkItem(void (*function)(void* arg), void* arg)
+    explicit BackgroundWorkItem(void (*function)(void* arg), void* arg)  // 调度函数执行的任务
         : function(function), arg(arg) {}
 
     void (*const function)(void*);
@@ -797,7 +797,7 @@ void PosixEnv::Schedule(
   if (!started_background_thread_) {
     started_background_thread_ = true;
     std::thread background_thread(PosixEnv::BackgroundThreadEntryPoint, this);
-    background_thread.detach();
+    background_thread.detach();  // 直接使用detach，运行但是不阻塞
   }
 
   // If the queue is empty, the background thread may be waiting for work.

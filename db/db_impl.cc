@@ -222,6 +222,7 @@ void DBImpl::MaybeIgnoreError(Status* s) const {
   }
 }
 
+// 回收文件
 void DBImpl::RemoveObsoleteFiles() {
   mutex_.AssertHeld();
 
@@ -504,27 +505,29 @@ Status DBImpl::RecoverLogFile(uint64_t log_number, bool last_log,
 
 Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
                                 Version* base) {
-  mutex_.AssertHeld();
-  const uint64_t start_micros = env_->NowMicros();
+  mutex_.AssertHeld();  // 判断是否持有锁
+  const uint64_t start_micros = env_->NowMicros();  // 获得时间戳
   FileMetaData meta;
-  meta.number = versions_->NewFileNumber();
-  pending_outputs_.insert(meta.number);
-  Iterator* iter = mem->NewIterator();
+  meta.number = versions_->NewFileNumber();  // 获得新的文件Number
+  pending_outputs_.insert(meta.number);  // 
+  Iterator* iter = mem->NewIterator();  // 创建Iterator
   Log(options_.info_log, "Level-0 table #%llu: started",
       (unsigned long long)meta.number);
 
   Status s;
   {
+    // 放锁
     mutex_.Unlock();
-    s = BuildTable(dbname_, env_, options_, table_cache_, iter, &meta);
+    // 创建SSTable
+    s = BuildTable(dbname_, env_, options_, table_cache_, iter, &meta);  // 创建一个SSTable把mem放进去
     mutex_.Lock();
   }
 
   Log(options_.info_log, "Level-0 table #%llu: %lld bytes %s",
       (unsigned long long)meta.number, (unsigned long long)meta.file_size,
       s.ToString().c_str());
-  delete iter;
-  pending_outputs_.erase(meta.number);
+  delete iter;  //删除迭代器
+  pending_outputs_.erase(meta.number); // 删除pedding号
 
   // Note that if file_size is zero, the file has been deleted and
   // should not be added to the manifest.
@@ -533,8 +536,10 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
     const Slice min_user_key = meta.smallest.user_key();
     const Slice max_user_key = meta.largest.user_key();
     if (base != nullptr) {
-      level = base->PickLevelForMemTableOutput(min_user_key, max_user_key);
+      // level 合并的核心算法
+      level = base->PickLevelForMemTableOutput(min_user_key, max_user_key);  // 返回有交叉范围的level
     }
+    // 修改增加类的内容
     edit->AddFile(level, meta.number, meta.file_size, meta.smallest,
                   meta.largest);
   }
@@ -542,10 +547,11 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
   CompactionStats stats;
   stats.micros = env_->NowMicros() - start_micros;
   stats.bytes_written = meta.file_size;
-  stats_[level].Add(stats);
+  stats_[level].Add(stats);  // 更新压缩状态
   return s;
 }
 
+// MemTable落盘
 void DBImpl::CompactMemTable() {
   mutex_.AssertHeld();
   assert(imm_ != nullptr);
@@ -554,8 +560,9 @@ void DBImpl::CompactMemTable() {
   VersionEdit edit;
   Version* base = versions_->current();
   base->Ref();
-  Status s = WriteLevel0Table(imm_, &edit, base);
-  base->Unref();
+  // 写Level0，通过MVCC，写入文件
+  Status s = WriteLevel0Table(imm_, &edit, base);  // 提交写入任务
+  base->Unref();  // 完成之后释放base上的引用
 
   if (s.ok() && shutting_down_.load(std::memory_order_acquire)) {
     s = Status::IOError("Deleting DB during memtable compaction");
@@ -565,10 +572,10 @@ void DBImpl::CompactMemTable() {
   if (s.ok()) {
     edit.SetPrevLogNumber(0);
     edit.SetLogNumber(logfile_number_);  // Earlier logs no longer needed
-    s = versions_->LogAndApply(&edit, &mutex_);
+    s = versions_->LogAndApply(&edit, &mutex_);  // Apply了VersionEdit操作
   }
 
-  if (s.ok()) {
+  if (s.ok()) {  // 清空imm
     // Commit to the new state
     imm_->Unref();
     imm_ = nullptr;
@@ -672,12 +679,13 @@ void DBImpl::MaybeScheduleCompaction() {
     // No work to be done
   } else {
     background_compaction_scheduled_ = true;
-    env_->Schedule(&DBImpl::BGWork, this);
+    env_->Schedule(&DBImpl::BGWork, this);  // 另一个线程开始执行压缩
   }
 }
 
+// 后台运行的任务
 void DBImpl::BGWork(void* db) {
-  reinterpret_cast<DBImpl*>(db)->BackgroundCall();
+  reinterpret_cast<DBImpl*>(db)->BackgroundCall();  // 一个回掉
 }
 
 void DBImpl::BackgroundCall() {
@@ -699,6 +707,7 @@ void DBImpl::BackgroundCall() {
   background_work_finished_signal_.SignalAll();
 }
 
+// 后台压缩代码
 void DBImpl::BackgroundCompaction() {
   mutex_.AssertHeld();
 
@@ -1280,6 +1289,9 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* updates) {
 
 // REQUIRES: Writer list must be non-empty
 // REQUIRES: First writer must have a non-null batch
+/*
+ * 合并当前batch到之前所有batch，将_writer队列里面所有的item合并
+ */
 WriteBatch* DBImpl::BuildBatchGroup(Writer** last_writer) {
   mutex_.AssertHeld();
   assert(!writers_.empty());
@@ -1330,7 +1342,7 @@ WriteBatch* DBImpl::BuildBatchGroup(Writer** last_writer) {
 
 // REQUIRES: mutex_ is held
 // REQUIRES: this thread is currently at the front of the writer queue
-Status DBImpl::MakeRoomForWrite(bool force) {
+Status DBImpl::MakeRoomForWrite(bool force) {  // update == null => true
   mutex_.AssertHeld();   // 判断是否持有锁
   assert(!writers_.empty());
   bool allow_delay = !force;  

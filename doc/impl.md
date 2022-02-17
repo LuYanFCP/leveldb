@@ -8,7 +8,7 @@ somewhat different and is explained below.
 Each database is represented by a set of files stored in a directory. There are
 several different types of files as documented below:
 
-### Log files
+### Log files (WAL)
 
 A log file (*.log) stores a sequence of recent updates. Each update is appended
 to the current log file. When the log file reaches a pre-determined size

@@ -38,6 +38,7 @@ void VersionEdit::Clear() {
   new_files_.clear();
 }
 
+// 将Edit序列化
 void VersionEdit::EncodeTo(std::string* dst) const {
   if (has_comparator_) {
     PutVarint32(dst, kComparator);
@@ -78,11 +79,12 @@ void VersionEdit::EncodeTo(std::string* dst) const {
     PutVarint32(dst, new_files_[i].first);  // level
     PutVarint64(dst, f.number);
     PutVarint64(dst, f.file_size);
-    PutLengthPrefixedSlice(dst, f.smallest.Encode());
+    PutLengthPrefixedSlice(dst, f.smallest.Encode());  // 最后写入
     PutLengthPrefixedSlice(dst, f.largest.Encode());
   }
 }
 
+// 获得 internalKey
 static bool GetInternalKey(Slice* input, InternalKey* dst) {
   Slice str;
   if (GetLengthPrefixedSlice(input, &str)) {
@@ -102,6 +104,7 @@ static bool GetLevel(Slice* input, int* level) {
   }
 }
 
+// 反序列化
 Status VersionEdit::DecodeFrom(const Slice& src) {
   Clear();
   Slice input = src;

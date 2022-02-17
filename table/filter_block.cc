@@ -49,16 +49,17 @@ Slice FilterBlockBuilder::Finish() {
 }
 
 void FilterBlockBuilder::GenerateFilter() {
-  const size_t num_keys = start_.size();
+  const size_t num_keys = start_.size(); // 存储了几个key
   if (num_keys == 0) {
     // Fast path if there are no keys for this filter
     filter_offsets_.push_back(result_.size());
     return;
   }
 
-  // Make list of keys from flattened key structure
+  // Make list of keys from flattened key structure, 加哨兵，方便计算
   start_.push_back(keys_.size());  // Simplify length computation
-  tmp_keys_.resize(num_keys);
+  tmp_keys_.resize(num_keys);  // k List
+
   for (size_t i = 0; i < num_keys; i++) {
     const char* base = keys_.data() + start_[i];
     size_t length = start_[i + 1] - start_[i];
@@ -66,8 +67,8 @@ void FilterBlockBuilder::GenerateFilter() {
   }
 
   // Generate filter for current set of keys and append to result_.
-  filter_offsets_.push_back(result_.size());
-  policy_->CreateFilter(&tmp_keys_[0], static_cast<int>(num_keys), &result_);
+  filter_offsets_.push_back(result_.size());  // 偏移
+  policy_->CreateFilter(&tmp_keys_[0], static_cast<int>(num_keys), &result_);  // 计算bloomfilter. 频入result
 
   tmp_keys_.clear();
   keys_.clear();

@@ -15,6 +15,7 @@ namespace leveldb {
 
 class VersionSet;
 
+// 整体SSTable 的file meta信息， 其中， smallest和largest分别是两个SSTable中 internalKey的范围
 struct FileMetaData {
   FileMetaData() : refs(0), allowed_seeks(1 << 30), file_size(0) {}
 
@@ -26,6 +27,7 @@ struct FileMetaData {
   InternalKey largest;   // Largest internal key served by table
 };
 
+// Version 的操作类
 class VersionEdit {
  public:
   VersionEdit() { Clear(); }
@@ -85,20 +87,22 @@ class VersionEdit {
 
   typedef std::set<std::pair<int, uint64_t>> DeletedFileSet;
 
-  std::string comparator_;
-  uint64_t log_number_;
-  uint64_t prev_log_number_;
-  uint64_t next_file_number_;
-  SequenceNumber last_sequence_;
+  std::string comparator_;  // compartor name
+  uint64_t log_number_;   // 编号
+  uint64_t prev_log_number_;  // 下一个编号
+  uint64_t next_file_number_; // 上一个编号
+  SequenceNumber last_sequence_;  // 最后的序列号
+  
+  // 以下是是否存在
   bool has_comparator_;
   bool has_log_number_;
   bool has_prev_log_number_;
   bool has_next_file_number_;
   bool has_last_sequence_;
 
-  std::vector<std::pair<int, InternalKey>> compact_pointers_;
-  DeletedFileSet deleted_files_;
-  std::vector<std::pair<int, FileMetaData>> new_files_;
+  std::vector<std::pair<int, InternalKey>> compact_pointers_;  // 压缩文件
+  DeletedFileSet deleted_files_;  // 需要删除的文件
+  std::vector<std::pair<int, FileMetaData>> new_files_;   // 各个level file的list
 };
 
 }  // namespace leveldb

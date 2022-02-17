@@ -41,14 +41,14 @@ Status Writer::AddRecord(const Slice& slice) {
   Status s;
   bool begin = true;
   do {
-    const int leftover = kBlockSize - block_offset_;
+    const int leftover = kBlockSize - block_offset_;  // 
     assert(leftover >= 0);
     if (leftover < kHeaderSize) {
       // Switch to a new block
       if (leftover > 0) {
         // Fill the trailer (literal below relies on kHeaderSize being 7)
         static_assert(kHeaderSize == 7, "");
-        dest_->Append(Slice("\x00\x00\x00\x00\x00\x00", leftover));
+        dest_->Append(Slice("\x00\x00\x00\x00\x00\x00", leftover));   // 补充0
       }
       block_offset_ = 0;
     }
@@ -56,22 +56,22 @@ Status Writer::AddRecord(const Slice& slice) {
     // Invariant: we never leave < kHeaderSize bytes in a block.
     assert(kBlockSize - block_offset_ - kHeaderSize >= 0);
 
-    const size_t avail = kBlockSize - block_offset_ - kHeaderSize;
+    const size_t avail = kBlockSize - block_offset_ - kHeaderSize;  // 剩余的内容
     const size_t fragment_length = (left < avail) ? left : avail;
 
     RecordType type;
-    const bool end = (left == fragment_length);
+    const bool end = (left == fragment_length);  // 如果不能填充一个block
     if (begin && end) {
-      type = kFullType;
+      type = kFullType;  // 全部crc
     } else if (begin) {
-      type = kFirstType;
-    } else if (end) {
+      type = kFirstType;  // 开头
+    } else if (end) {  // 结尾
       type = kLastType;
-    } else {
+    } else { // 中间
       type = kMiddleType;
     }
 
-    s = EmitPhysicalRecord(type, ptr, fragment_length);
+    s = EmitPhysicalRecord(type, ptr, fragment_length);   // 开始排空
     ptr += fragment_length;
     left -= fragment_length;
     begin = false;
@@ -86,24 +86,30 @@ Status Writer::EmitPhysicalRecord(RecordType t, const char* ptr,
 
   // Format the header
   char buf[kHeaderSize];
-  buf[4] = static_cast<char>(length & 0xff);
-  buf[5] = static_cast<char>(length >> 8);
-  buf[6] = static_cast<char>(t);
+  // 0-3 是CRC checksum
+  buf[4] = static_cast<char>(length & 0xff);   // 长度
+  buf[5] = static_cast<char>(length >> 8);  // 
+  buf[6] = static_cast<char>(t);  // 类型，开头、中间、结尾
 
   // Compute the crc of the record type and the payload.
   uint32_t crc = crc32c::Extend(type_crc_[t], ptr, length);
   crc = crc32c::Mask(crc);  // Adjust for storage
-  EncodeFixed32(buf, crc);
+  EncodeFixed32(buf, crc);  // 将CRC填入
 
   // Write the header and the payload
-  Status s = dest_->Append(Slice(buf, kHeaderSize));
+  Status s = dest_->Append(Slice(buf, kHeaderSize));  // 写入头
   if (s.ok()) {
-    s = dest_->Append(Slice(ptr, length));
+    s = dest_->Append(Slice(ptr, length));  // 写数据
     if (s.ok()) {
-      s = dest_->Flush();
+      s = dest_->Flush();  // Flush
     }
   }
-  block_offset_ += kHeaderSize + length;
+  /**
+   * @brief 
+   * 1. 开头和中间的都是block_offset = KBlock
+   * 2. 如果是结尾那就是真实的offset 
+   */
+  block_offset_ += kHeaderSize + length;  // block_offset_
   return s;
 }
 

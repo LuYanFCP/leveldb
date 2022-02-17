@@ -51,13 +51,15 @@ int FindFile(const InternalKeyComparator& icmp,
 // largest==nullptr represents a key largest than all keys in the DB.
 // REQUIRES: If disjoint_sorted_files, files[] contains disjoint ranges
 //           in sorted order.
+// 所有有交集的 FileMetaData的集合
 bool SomeFileOverlapsRange(const InternalKeyComparator& icmp,
                            bool disjoint_sorted_files,
                            const std::vector<FileMetaData*>& files,
                            const Slice* smallest_user_key,
                            const Slice* largest_user_key);
 
-class Version {
+// 一个version的对象
+class Version {  
  public:
   // Lookup the value for key.  If found, store it in *val and
   // return OK.  Else return a non-OK status.  Fills *stats.
@@ -106,6 +108,7 @@ class Version {
 
   // Return the level at which we should place a new memtable compaction
   // result that covers the range [smallest_user_key,largest_user_key].
+  // 返回区域的两个变量 
   int PickLevelForMemTableOutput(const Slice& smallest_user_key,
                                  const Slice& largest_user_key);
 
@@ -146,24 +149,29 @@ class Version {
                           bool (*func)(void*, int, FileMetaData*));
 
   VersionSet* vset_;  // VersionSet to which this Version belongs
+  // 双链表
   Version* next_;     // Next version in linked list
   Version* prev_;     // Previous version in linked list
+  // 引用个数
   int refs_;          // Number of live refs to this version
 
   // List of files per level
+  // 每个Level的FileMeta个数
   std::vector<FileMetaData*> files_[config::kNumLevels];
 
   // Next file to compact based on seek stats.
+  // 需要合并的文件Meta
   FileMetaData* file_to_compact_;
   int file_to_compact_level_;
 
   // Level that should be compacted next and its compaction score.
   // Score < 1 means compaction is not strictly needed.  These fields
   // are initialized by Finalize().
-  double compaction_score_;
-  int compaction_level_;
+  double compaction_score_; // 合并得分
+  int compaction_level_;  // 合并层数
 };
 
+// MVCC 集合
 class VersionSet {
  public:
   VersionSet(const std::string& dbname, const Options* options,
@@ -178,20 +186,20 @@ class VersionSet {
   // current version.  Will release *mu while actually writing to the file.
   // REQUIRES: *mu is held on entry.
   // REQUIRES: no other thread concurrently calls LogAndApply()
-  Status LogAndApply(VersionEdit* edit, port::Mutex* mu)
+  Status LogAndApply(VersionEdit* edit, port::Mutex* mu) // 在当前的current version执行一组VersionEdit
       EXCLUSIVE_LOCKS_REQUIRED(mu);
 
   // Recover the last saved descriptor from persistent storage.
   Status Recover(bool* save_manifest);
 
   // Return the current version.
-  Version* current() const { return current_; }
+  Version* current() const { return current_; }  // 当前版本信息
 
   // Return the current manifest file number
-  uint64_t ManifestFileNumber() const { return manifest_file_number_; }
+  uint64_t ManifestFileNumber() const { return manifest_file_number_; }  // 获取manifest_file的文件号
 
   // Allocate and return a new file number
-  uint64_t NewFileNumber() { return next_file_number_++; }
+  uint64_t NewFileNumber() { return next_file_number_++; }  // 
 
   // Arrange to reuse "file_number" unless a newer file number has
   // already been allocated.
